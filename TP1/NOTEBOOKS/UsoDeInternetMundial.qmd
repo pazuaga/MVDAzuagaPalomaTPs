@@ -185,3 +185,82 @@ explorar_datos <- function(data) {
 # Aplicamos la función a nuestro dataset final
 explorar_datos(internet_full)
 ```
+
+# ================================
+
+# PASO 7: Uso de factores
+
+# ================================
+
+```{r}
+# Convertimos incomegroup en factor ordenado
+
+internet_summary <- internet_summary %>%
+  mutate(
+    incomegroup = factor(
+      incomegroup,
+      levels = c(
+        "Low income",
+        "Lower middle income",
+        "Upper middle income",
+        "High income"
+      )
+    )
+  )
+
+# Verificamos el orden
+levels(internet_summary$incomegroup)
+```
+
+# ================================
+
+# PASO FINAL: Tabla final y exportación
+
+# ================================
+
+```{r}
+
+### Los datos fueron transformados a formato long para facilitar el procesamiento y análisis, y posteriormente reorganizados en formato wide para su presentación y comparación entre grupos.
+
+# Eliminamos filas con incomegroup NA antes del pivot
+
+internet_summary_clean <- internet_summary %>%
+  drop_na(incomegroup)
+
+# Transformamos a formato wide
+
+resultado_final <- internet_summary_clean %>%
+  pivot_wider(
+    names_from = incomegroup,
+    values_from = avg_internet_users
+  )
+
+# Renombramos columnas
+
+names(resultado_final) <- c(
+  "year",
+  "low_income",
+  "lower_middle_income",
+  "upper_middle_income",
+  "high_income"
+)
+
+# Agregamos nombre del indicador
+
+resultado_final <- resultado_final %>%
+  mutate(indicator_name = "Proporción de la población que usa internet (%)")
+
+# Ordenamos
+
+resultado_final <- resultado_final %>%
+  arrange(year)
+
+# Vemos resultado
+head(resultado_final)
+
+# Exportamos
+
+write_csv(resultado_final, "../output/resultado_hipotesis.csv")
+```
+
+### El análisis muestra que, en términos generales, los países de menores ingresos presentan tasas de crecimiento más elevadas en el acceso a internet en comparación con los países de ingresos altos. Sin embargo, los niveles absolutos de penetración continúan siendo significativamente más bajos.
