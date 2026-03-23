@@ -1,0 +1,1 @@
+Trabajo práctico 1. El análisis de los datos del Banco Mundial muestra que, en términos generales, los países de menores ingresos presentan tasas de crecimiento más elevadas en el acceso a internet en comparación con los países de ingresos altos.
