@@ -212,23 +212,16 @@ internet_summary <- internet_summary %>%
 levels(internet_summary$incomegroup)
 ```
 
-# ================================
-
-# PASO FINAL: Tabla final y exportación
-
-# ================================
-
 ```{r}
+# ================================
+# PASO FINAL: Tabla final + validación hipótesis
+# ================================
 
-### Los datos fueron transformados a formato long para facilitar el procesamiento y análisis, y posteriormente reorganizados en formato wide para su presentación y comparación entre grupos.
-
-# Eliminamos filas con incomegroup NA antes del pivot
-
+# Eliminamos filas con incomegroup NA (antes del pivot)
 internet_summary_clean <- internet_summary %>%
   drop_na(incomegroup)
 
 # Transformamos a formato wide
-
 resultado_final <- internet_summary_clean %>%
   pivot_wider(
     names_from = incomegroup,
@@ -236,7 +229,6 @@ resultado_final <- internet_summary_clean %>%
   )
 
 # Renombramos columnas
-
 names(resultado_final) <- c(
   "year",
   "low_income",
@@ -245,22 +237,46 @@ names(resultado_final) <- c(
   "high_income"
 )
 
-# Agregamos nombre del indicador
+# Filtramos SOLO la década relevante (HIPÓTESIS)
+resultado_final <- resultado_final %>%
+  filter(year >= 2013, year <= 2023)
 
+# Agregamos nombre del indicador
 resultado_final <- resultado_final %>%
   mutate(indicator_name = "Proporción de la población que usa internet (%)")
 
-# Ordenamos
-
+# Ordenamos por año
 resultado_final <- resultado_final %>%
   arrange(year)
 
-# Vemos resultado
+# Vemos resultado final
 head(resultado_final)
 
-# Exportamos
+# ================================
+# VALIDACIÓN DE HIPÓTESIS (ÚLTIMA DÉCADA DISPONIBLE)
+# ================================
+
+crecimiento <- internet_summary %>%
+  filter(year >= 2010) %>%  # aproximamos última década
+  group_by(incomegroup) %>%
+  summarise(
+    valor_inicial = first(avg_internet_users),
+    valor_final = last(avg_internet_users),
+    crecimiento_pct = ((valor_final - valor_inicial) / valor_inicial) * 100
+  )
+
+crecimiento
+
+# Mostramos crecimiento
+crecimiento
+
+# ================================
+# EXPORTAMOS (RUTA RELATIVA)
+# ================================
 
 write_csv(resultado_final, "../output/resultado_hipotesis.csv")
 ```
 
-### El análisis muestra que, en términos generales, los países de menores ingresos presentan tasas de crecimiento más elevadas en el acceso a internet en comparación con los países de ingresos altos. Sin embargo, los niveles absolutos de penetración continúan siendo significativamente más bajos.
+```{r}
+
+```
