@@ -125,3 +125,63 @@ internet_long <- internet_long %>%
 head(internet_long)
 glimpse(internet_long)
 ```
+
+# ================================
+
+# PASO 4: Cruce de datos (left_join)
+
+# ================================
+
+```{r}
+# Unimos el dataset de uso de internet con el metadata de países
+# usando como clave el código de país (country_code)
+
+internet_full <- internet_long %>%
+  left_join(metadata, by = "country_code")
+
+# Verificamos que se hayan agregado las columnas correctamente
+glimpse(internet_full)
+
+# Vemos algunas filas para confirmar
+head(internet_full)
+```
+
+# ================================
+
+# PASO 5: Agregación de datos
+
+# ================================
+
+```{r}
+# Calculamos el promedio de uso de internet por año y grupo de ingresos
+
+internet_summary <- internet_full %>%
+  group_by(year, incomegroup) %>%
+  summarise(
+    avg_internet_users = mean(internet_users_pct, na.rm = TRUE)
+  )
+
+# Vemos cómo quedó el dataset agregado
+glimpse(internet_summary)
+head(internet_summary)
+```
+
+# ================================
+
+# PASO 6: Uso de función
+
+# ================================
+
+```{r}
+# Definimos una función simple para explorar datos
+explorar_datos <- function(data) {
+  print("Primeras filas:")
+  print(head(data))
+  
+  print("Estructura del dataset:")
+  print(glimpse(data))
+}
+
+# Aplicamos la función a nuestro dataset final
+explorar_datos(internet_full)
+```
