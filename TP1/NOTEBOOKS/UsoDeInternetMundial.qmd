@@ -1,0 +1,127 @@
+---
+title: "UsoDeInternetMundial"
+format: html
+---
+
+# ================================
+
+# PASO 1: Lectura y normalización de datos
+
+# ================================
+
+```{r}
+# Cargamos la librería tidyverse 
+library(tidyverse)
+
+# -------------------------------
+# Lectura de datos (rutas relativas)
+# -------------------------------
+
+# Leemos el archivo principal de uso de internet
+internet_raw <- read_csv("../data/internet_users_world_wide.csv")
+
+# Leemos el archivo de metadata de países
+metadata <- read_csv("../data/metadata_countries_internet_users.csv")
+
+# Exploración inicial
+head(internet_raw)
+glimpse(internet_raw)
+
+head(metadata)
+glimpse(metadata)
+```
+
+```{r}
+# -------------------------------
+# Normalización de nombres de columnas
+# -------------------------------
+
+# Visualizamos los nombres originales de las columnas
+names(internet_raw)
+names(metadata)
+
+# Pasamos todo a minúsculas
+names(internet_raw) <- tolower(names(internet_raw))
+names(metadata) <- tolower(names(metadata))
+
+# Reemplazamos espacios por guiones bajos
+names(internet_raw) <- gsub(" ", "_", names(internet_raw))
+names(metadata) <- gsub(" ", "_", names(metadata))
+```
+
+```{r}
+# -------------------------------
+# Limpieza inicial del dataset
+# -------------------------------
+
+# Eliminamos las primeras filas porque no contienen datos reales
+# (son metadata como "Last Updated Date" y encabezados)
+
+internet_clean <- internet_raw %>%
+  slice(-c(1, 2))
+
+# Verificamos
+head(internet_clean)
+```
+
+# ================================
+
+# PASO 2: Transformación de formato Wide a Long
+
+# ================================
+
+```{r}
+# Renombramos columnas para facilitar el trabajo
+names(internet_clean) <- c("country_name", "country_code", "datos")
+
+# Separamos la columna en múltiples columnas
+internet_separado <- internet_clean %>%
+  separate(datos,
+           into = c("indicator_name", "indicator_code", paste0("year_", 1960:2023)),
+           sep = ",",
+           extra = "merge")
+
+# Convertimos de formato wide a long
+internet_long <- internet_separado %>%
+  pivot_longer(
+    cols = starts_with("year_"),
+    names_to = "year",
+    values_to = "internet_users_pct"
+  )
+
+# Limpiamos la columna year
+internet_long <- internet_long %>%
+  mutate(year = gsub("year_", "", year))
+
+# Convertimos a numérico
+internet_long <- internet_long %>%
+  mutate(year = as.numeric(year))
+
+# Verificamos
+head(internet_long)
+glimpse(internet_long)
+```
+
+# ================================
+
+# PASO 3: Tratamiento de valores faltantes (NA)
+
+# ================================
+
+```{r}
+# Reemplazamos valores inválidos por NA
+internet_long <- internet_long %>%
+  mutate(internet_users_pct = na_if(internet_users_pct, "\""))
+
+# Convertimos a numérico
+internet_long <- internet_long %>%
+  mutate(internet_users_pct = as.numeric(internet_users_pct))
+
+# Eliminamos NA
+internet_long <- internet_long %>%
+  drop_na(internet_users_pct)
+
+# Verificamos resultado final
+head(internet_long)
+glimpse(internet_long)
+```
