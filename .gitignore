@@ -1,4 +1,13 @@
-.Rproj.user
+# Archivos del sistema de R
 .Rhistory
 .RData
+.Rproj.user/
+.Renviron
 .Ruserdata
+
+# Modelo pesado de udpipe 
+*.udpipe
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
