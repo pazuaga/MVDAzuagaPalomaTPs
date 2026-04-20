@@ -8,6 +8,8 @@ format:
   html:
     toc: true
     toc-depth: 2
+    theme: cosmo
+    embed-resources: true
 ---
 
 # Introducción
