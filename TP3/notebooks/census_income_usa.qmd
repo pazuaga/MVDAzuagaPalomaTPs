@@ -58,7 +58,7 @@ if (!require("pacman")) install.packages("pacman")
 # Cargamos de una sola vez todas las librerías que vamos a usar en el notebook
 pacman::p_load(
   tidyverse,        # Manipulación de datos (dplyr, tidyr) y visualización (ggplot2)
-  here,             # Rutas relativas a la raíz del proyecto (la consigna pide cargar con here)
+  here,             # Rutas relativas a la raíz del proyecto 
   scales,           # Formateo de ejes y etiquetas en gráficos (porcentajes, dólares)
   broom,            # Convierte outputs de modelos en data frames ordenados (tidy, glance)
   modelsummary,     # Tablas de regresión estilo publicación académica
@@ -101,8 +101,7 @@ Antes de modelar, dejamos la base lista: nos quedamos con las variables relevant
 #| warning: false
 
 datos_censo <- datos_censo |> 
-  # Eliminamos filas con valores nulos (defensivo: este dataset viene sin NA,
-  # pero mantenemos el paso por las dudas, como hicimos en clase)
+  # Eliminamos filas con valores nulos 
   drop_na() |> 
   # Nos quedamos solo con las variables que vamos a usar para explicar el ingreso
   select(
@@ -130,8 +129,7 @@ datos_censo <- datos_censo |>
       TRUE ~ "single"
     ),
     
-    # Convertimos a factor las categóricas (sin fijar referencia todavía:
-    # eso lo definiremos en el ajuste del modelo según la historia a contar)
+    # Convertimos a factor las categóricas
     marital_status = factor(marital_status),
     occupation     = factor(occupation),
     sex            = factor(sex)
@@ -162,7 +160,7 @@ print(prop.table(table(datos_censo$income)) |> round(3))
 ::: callout-note
 **Un dataset razonablemente balanceado**
 
-Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. Es un balance muy cómodo: nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo. :::
+Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. El balance nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo. :::
 :::
 
 ## Exploración visual: ¿qué variables separan a los altos ingresos?
@@ -278,7 +276,7 @@ p_capital <- datos_censo |>
 
 **Años de educación:** es de las variables que mejor separa. El grupo \>50K tiene una mediana de educación claramente más alta.
 
-**Ganancia de capital:** distribución extremadamente sesgada y con muchísimos ceros. En escala logarítmica se ve que los valores altos se asocian fuertemente a \>50K. Esto anticipa que conviene transformarla (lo discutimos en el próximo paso).
+**Ganancia de capital:** distribución extremadamente sesgada y con muchísimos ceros. En escala logarítmica se ve que los valores altos se asocian fuertemente a \>50K.
 :::
 
 ### Variables categóricas vs. ingreso
@@ -377,7 +375,7 @@ datos_censo |>
 
 ## Decisiones de transformación e interacción
 
-A partir de la exploración anterior tomamos dos decisiones de especificación, ambas con sustento teórico: aplicar una transformación logarítmica a una variable continua muy sesgada, e incluir un término de interacción entre dos variables.
+A partir de la exploración anterior tomamos dos decisiones de especificación: aplicar una transformación logarítmica a una variable continua muy sesgada, e incluir un término de interacción entre dos variables.
 
 ### Transformación logarítmica de `capital_gain`
 
@@ -427,4 +425,411 @@ datos_censo |>
 En los hombres (un panel), el salto de "single" a "married" produce un aumento muy grande en la proporción de altos ingresos: el matrimonio se asocia a un salto fuerte hacia \>50K. En las mujeres (el otro panel), aunque también hay diferencia entre "single" y "married", el salto es notablemente más chico: estar casada no eleva la proporción de altos ingresos en la misma magnitud que en los hombres.
 
 Esta asimetría —el efecto del estado civil sobre el ingreso es más intenso en hombres que en mujeres— es exactamente lo que un término de interacción sex \* marital_status permite capturar, y no se explicaría simplemente sumando por separado el efecto de "ser mujer" y el de "estar casado".
+:::
+
+## Ajuste de los modelos de regresión logística
+
+### Definición de las categorías de referencia
+
+Antes de estimar, fijamos la categoría de referencia de cada predictor categórico. La referencia es el nivel contra el cual se comparan los demás (lo absorbe el intercepto).
+
+```{r}
+#| label: definir-referencias
+#| message: false
+#| warning: false
+
+datos_censo <- datos_censo |> 
+  mutate(
+    # sex: referencia = "Male". Así el coeficiente de "Female" se lee como
+    # el efecto de ser mujer respecto del varón (la brecha de género)
+    sex = relevel(sex, ref = "Male"),
+    
+    # marital_status: referencia = "single". Así el coeficiente de "married"
+    # mide el premio del matrimonio respecto de estar soltero/a
+    marital_status = relevel(marital_status, ref = "single"),
+    
+    # occupation: referencia = "Other-service" (ocupación de bajos ingresos).
+    # Los coeficientes del resto se leen como cuánto más probable es ganar >50K
+    # respecto de una ocupación de servicios de base
+    occupation = relevel(occupation, ref = "Other-service")
+  )
+```
+
+### Estimación de los modelos con `glm()`
+
+Estimamos dos modelos logísticos con `glm()` y `family = "binomial"` (que indica el enlace logit para una variable dependiente dicotómica). Como nuestra perspectiva es **explicativa**, ajustamos sobre el conjunto completo de datos.
+
+-   **Modelo 1 (Base):** edad, educación, horas semanales, log de la ganancia de capital, sexo, estado civil y ocupación, sin interacciones.
+
+-   **Modelo 2 (Interacción):** los mismos predictores más la interacción `sex * marital_status`.
+
+```{r}
+#| label: modelos-logisticos
+#| message: false
+#| warning: false
+
+# Modelo 1 (Base): sin interacciones
+# Usamos log1p(capital_gain) = log(capital_gain + 1) para evitar log(0)
+modelo_base <- glm(
+  income ~ age + education_num + hours_per_week + log1p(capital_gain) +
+           sex + marital_status + occupation,
+  family = "binomial",
+  data = datos_censo
+)
+
+# Modelo 2 (Interacción): agrega sex * marital_status
+# Recordemos que en R 'sex * marital_status' incluye automáticamente los dos
+# efectos principales y el término de interacción sex:marital_status
+modelo_int <- glm(
+  income ~ age + education_num + hours_per_week + log1p(capital_gain) +
+           occupation + sex * marital_status,
+  family = "binomial",
+  data = datos_censo
+)
+
+# Revisamos el resumen de ambos modelos
+summary(modelo_base)
+summary(modelo_int)
+```
+
+-   ::: callout-caution
+    **Interpretando el summary():** **los log-odds**
+
+    Los coeficientes están en la escala de log-odds, poco intuitiva, así que por ahora solo leemos signo y significancia.
+
+    **(Intercept):** log-odds de ganar \>50K para el perfil de referencia (varón, soltero, ocupación Other-service, con el resto de variables en 0). No tiene una lectura práctica directa.
+
+    **education_num, age, hours_per_week:** se esperan coeficientes positivos y significativos: más educación, más edad y más horas se asocian a mayor probabilidad de altos ingresos.
+
+    **log1p(capital_gain):** positivo y fuertemente significativo; las ganancias de capital empujan con claridad hacia \>50K.
+
+    **occupation...:** los niveles gerenciales y profesionales deberían mostrar coeficientes positivos grandes frente a la referencia Other-service.
+
+    **Sobre la interacción** (Modelo 2): observamos el término sexFemale:marital_statusmarried. Si es negativo y significativo, confirma nuestra hipótesis: el premio del matrimonio sobre el ingreso es menor para las mujeres que para los varones.
+    :::
+
+## De *log-odds* a *Odds Ratios*
+
+Los coeficientes del `summary()` están en *log-odds*, difíciles de leer. Si les aplicamos la exponencial (`exp(β)`) obtenemos los **Odds Ratios (OR)**: el factor por el que se multiplican las chances de ganar `>50K` ante un aumento unitario de la variable (o, en las categóricas, al pasar del nivel de referencia a ese nivel). Un OR mayor que 1 aumenta las chances; menor que 1 las reduce; igual a 1 es neutro.
+
+### Tabla de Odds Ratios del Modelo 2
+
+```{r}
+#| label: odds-ratios
+#| message: false
+#| warning: false
+
+# broom::tidy con exponentiate = TRUE devuelve los coeficientes ya como OR.
+# conf.int = TRUE agrega el intervalo de confianza al 95%
+or_modelo <- broom::tidy(modelo_int, exponentiate = TRUE, conf.int = TRUE) |> 
+  select(term, estimate, conf.low, conf.high, p.value) |> 
+  mutate(
+    interpretacion = case_when(
+      estimate > 1 & p.value < 0.05 ~ "Aumenta chances (Sig.)",
+      estimate < 1 & p.value < 0.05 ~ "Reduce chances (Sig.)",
+      TRUE ~ "No significativo"
+    )
+  )
+
+# Mostramos la tabla formateada
+or_modelo |> 
+  rename(
+    `Predictor` = term,
+    `Odds Ratio` = estimate,
+    `IC Inferior` = conf.low,
+    `IC Superior` = conf.high,
+    `Valor p` = p.value,
+    `Interpretación` = interpretacion
+  ) |> 
+  knitr::kable(
+    digits = 3,
+    caption = "Odds Ratios del Modelo con Interacción"
+  ) |> 
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  # Resaltamos en azul claro las filas significativas
+  row_spec(
+    row = which(or_modelo$p.value < 0.05),
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
+  )
+```
+
+### Gráfico de bosque (forest plot) con barras graduadas
+
+Para mostrar la robustez de cada estimación, graficamos los OR con intervalos de confianza a tres niveles (80%, 95% y 99%) mediante barras de grosor variable. Un coeficiente cuyo intervalo al 99% no cruza la línea del 1 es evidencia muy fuerte. Usamos escala logarítmica en el eje X, imprescindible al graficar OR.
+
+```{r}
+#| label: fig-forest-plot
+#| fig-width: 14
+#| fig-height: 8
+#| message: false
+#| warning: false
+
+# Extraemos los coeficientes SIN exponenciar (en log-odds) para calcular
+# manualmente los intervalos a distintos niveles de confianza
+df_plot_or <- broom::tidy(modelo_int) |> 
+  # Excluimos el intercepto (no es un efecto interpretable)
+  filter(term != "(Intercept)") |> 
+  mutate(
+    # Límites en log-odds usando cuantiles de la distribución normal
+    lo_80 = estimate - qnorm(0.90) * std.error,
+    hi_80 = estimate + qnorm(0.90) * std.error,
+    lo_95 = estimate - qnorm(0.975) * std.error,
+    hi_95 = estimate + qnorm(0.975) * std.error,
+    lo_99 = estimate - qnorm(0.995) * std.error,
+    hi_99 = estimate + qnorm(0.995) * std.error,
+    
+    # Exponenciamos todo para pasarlo a escala de Odds Ratios
+    across(c(estimate, starts_with("lo_"), starts_with("hi_")), exp),
+    
+    # Etiquetas limpias para el gráfico
+    term_clean = case_match(
+      term,
+      "age" ~ "Edad (años)",
+      "education_num" ~ "Años de educación",
+      "hours_per_week" ~ "Horas por semana",
+      "log1p(capital_gain)" ~ "Log(Ganancia capital)",
+      "sexFemale" ~ "Sexo: Mujer (vs Varón)",
+      "marital_statusmarried" ~ "Casado/a (vs Soltero/a)",
+      "sexFemale:marital_statusmarried" ~ "Interacción: Mujer × Casada",
+      .default = term  # las ocupaciones quedan con su nombre original
+    )
+  )
+
+ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
+  # Línea vertical de referencia en OR = 1 (efecto nulo)
+  geom_vline(xintercept = 1, linetype = "dashed", color = "gray40", linewidth = 1) +
+  
+  # Barra 99% (fina y clara)
+  geom_linerange(aes(xmin = lo_99, xmax = hi_99), color = "#74ADD1", linewidth = 1.5) +
+  # Barra 95% (media)
+  geom_linerange(aes(xmin = lo_95, xmax = hi_95), color = "#4575B4", linewidth = 3.5) +
+  # Barra 80% (gruesa y oscura)
+  geom_linerange(aes(xmin = lo_80, xmax = hi_80), color = "#313695", linewidth = 6) +
+  
+  # Punto del estimador central (OR)
+  geom_point(color = "#D73027", size = 4) +
+  
+  # Escala logarítmica en X: crucial para graficar Odds Ratios
+  scale_x_log10() +
+  
+  labs(
+    title = "Efectos sobre la probabilidad de ganar >50K (Odds Ratios)",
+    subtitle = "Barras de error graduadas: 80% (gruesa), 95% (media), 99% (fina)",
+    x = "Odds Ratio (escala logarítmica)",
+    y = NULL,
+    caption = "Si la barra cruza la línea punteada (OR=1), el efecto no es significativo a ese nivel de confianza."
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(size = 12)
+  )
+```
+
+::: callout-note
+**Lectura del forest plot**
+
+Los predictores ubicados a la derecha de la línea del 1 (educación, horas, ganancia de capital, ocupaciones gerenciales/profesionales) aumentan las chances de ganar \>50K; cuanto más lejos del 1 y más angostas sus barras, más fuerte y robusto el efecto.
+
+El término Casado/a (vs Soltero/a) debería ubicarse claramente a la derecha del 1: estar casado multiplica las chances de altos ingresos. Pero, por la interacción, ese OR corresponde al efecto del matrimonio entre los varones (la referencia de sexo).
+
+El término Interacción: Mujer × Casada se ubicaría a la izquierda del 1: indica que, para las mujeres, el premio del matrimonio es menor que para los varones; las chances que el matrimonio agrega se ven reducidas por este factor multiplicativo.
+:::
+
+## Efectos Marginales Promedio (AME)
+
+Los *Odds Ratios* hablan de "chances", pero a menudo es más intuitivo razonar en **probabilidad** (de 0 a 100%). El **efecto marginal** responde: si aumento una variable en una unidad, ¿en cuántos puntos porcentuales cambia la probabilidad de ganar `>50K`? Como en logística la curva es una "S", ese efecto difiere para cada persona; el **AME** lo calcula para cada individuo y promedia todos esos efectos.
+
+### Tabla de efectos marginales del Modelo 2
+
+```{r}
+#| label: average-marginal-effects
+#| message: false
+#| warning: false
+
+# AME estándar (dY/dX) para las variables lineales y categóricas:
+# el cambio en la probabilidad por una unidad (o al pasar de la referencia al nivel)
+ame_estandar <- avg_slopes(
+  modelo_int,
+  variables = c("age", "education_num", "hours_per_week",
+                "sex", "marital_status", "occupation"),
+  slope = "dydx"
+)
+
+# Semi-elasticidad (dY/eX) para capital_gain, que entra como log1p():
+# interpreta el efecto de un cambio porcentual en la variable (como en clase con income)
+ame_capital <- avg_slopes(
+  modelo_int,
+  variables = "capital_gain",
+  slope = "dyex"
+)
+
+# Apilamos ambos resultados en una sola tabla
+efectos_marginales <- bind_rows(ame_estandar, ame_capital)
+
+# Tabla limpia y formateada
+efectos_marginales |> 
+  select(term, contrast, estimate, conf.low, conf.high, p.value) |> 
+  mutate(
+    # Pasamos el efecto a puntos porcentuales para lectura humana
+    estimate_pct = paste0(round(estimate * 100, 2), "%"),
+    interpretacion = case_when(
+      estimate > 0 & p.value < 0.05 ~ "Aumenta prob. (Sig.)",
+      estimate < 0 & p.value < 0.05 ~ "Reduce prob. (Sig.)",
+      TRUE ~ "No significativo"
+    )
+  ) |> 
+  select(term, contrast, estimate_pct, conf.low, conf.high, p.value, interpretacion) |> 
+  rename(
+    `Predictor` = term,
+    `Contraste` = contrast,
+    `Efecto (Prob)` = estimate_pct,
+    `IC Inferior` = conf.low,
+    `IC Superior` = conf.high,
+    `Valor p` = p.value,
+    `Interpretación` = interpretacion
+  ) |> 
+  knitr::kable(
+    digits = 4,
+    caption = "Efectos Marginales Promedio (cambio en la probabilidad de ganar >50K)"
+  ) |> 
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  row_spec(
+    row = which(efectos_marginales$p.value < 0.05),
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
+  )
+```
+
+::: callout-tip
+**Interpretación directa (AME):**
+
+-   education_num: en promedio, cada año adicional de educación aumenta la probabilidad de ganar \>50K en X puntos porcentuales. Suele ser uno de los efectos más fuertes.
+
+-   hours_per_week: cada hora semanal adicional aumenta la probabilidad en X p.p., en promedio.
+
+-   age: cada año más de edad aumenta la probabilidad en X p.p.
+
+-   capital_gain (dY/eX): un aumento porcentual en la ganancia de capital se asocia a X p.p. más de probabilidad de altos ingresos.
+
+-   marital_status (married − single): estar casado/a aumenta, en promedio, la probabilidad de \>50K en X p.p. frente a estar soltero/a.
+
+-   sex (Female − Male): en promedio, las mujeres tienen X p.p. menos de probabilidad de altos ingresos que los varones.
+:::
+
+### Visualización de la interacción: el impacto real en la probabilidad
+
+Los coeficientes de interacción son difíciles de leer en crudo. La mejor forma de entender qué hace `sex * marital_status` es graficar las **probabilidades predichas** de ganar `>50K` según estado civil, separadas por sexo. Comparamos el Modelo 1 (sin interacción) con el Modelo 2 (con interacción) para ver la diferencia.
+
+```{r}
+#| label: fig-efecto-interaccion
+#| fig-width: 14
+#| fig-height: 7
+#| message: false
+#| warning: false
+
+# plot_predictions genera las probabilidades predichas manteniendo el resto
+# de las variables en sus valores típicos automáticamente
+
+# Modelo 1: sin interacción (las líneas serán paralelas por construcción)
+p_base <- plot_predictions(modelo_base, condition = c("marital_status", "sex")) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
+  labs(
+    title = "Modelo 1: Sin Interacción",
+    subtitle = "El efecto del estado civil se asume idéntico para ambos sexos.",
+    x = "Estado civil", y = "Probabilidad predicha de ganar >50K"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+# Modelo 2: con interacción (las líneas pueden divergir)
+p_int <- plot_predictions(modelo_int, condition = c("marital_status", "sex")) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
+  labs(
+    title = "Modelo 2: Con Interacción (Sexo × Estado civil)",
+    subtitle = "El premio del matrimonio difiere entre varones y mujeres.",
+    x = "Estado civil", y = "Probabilidad predicha de ganar >50K"
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(face = "bold"))
+
+# Componemos con patchwork
+p_base + p_int +
+  plot_annotation(
+    title = "¿Por qué importa modelar la interacción?",
+    caption = "Bandas: intervalos de confianza al 95%. Resto de variables en valores típicos.",
+    theme = theme(plot.title = element_text(face = "bold", size = 18))
+  )
+```
+
+::: callout-note
+**La interacción se vuelve clara**
+
+En el Modelo 1, el modelo está forzado a mantener una distancia constante entre varones y mujeres en ambos estados civiles (las líneas se mueven en paralelo). El "premio del matrimonio" se asume idéntico para ambos sexos.
+
+En el Modelo 2, al liberar esa restricción, el patrón se esclarece: el salto de "single" a "married" eleva la probabilidad de altos ingresos mucho más en los varones que en las mujeres. La brecha de género se amplía entre las personas casadas, lo que respalda nuestra hipótesis del premio salarial del matrimonio con sesgo de género.
+:::
+
+## Comparación global de los modelos
+
+Queremos saber si el Modelo 2 (con la interacción) es mejor que el Modelo 1 (sin ella). Para compararlos miramos dos números que devuelve `broom::glance()`: el **AIC** (gana el más bajo) y el **Pseudo-R²** (gana el más alto). El Pseudo-R² se calcula a partir de las deviances.
+
+```{r}
+#| label: comparacion-ajuste
+#| message: false
+#| warning: false
+
+bind_rows(
+  broom::glance(modelo_base) |> mutate(Modelo = "1. Sin Interacción"),
+  broom::glance(modelo_int)  |> mutate(Modelo = "2. Con Interacción")
+) |> 
+  # Pseudo-R2 a partir de las deviances (nula y residual)
+  mutate(pseudo_r2 = 1 - (deviance / null.deviance)) |> 
+  # Seleccionamos las columnas que importan
+  select(Modelo, null.deviance, deviance, pseudo_r2, AIC, nobs) |> 
+  rename(
+    `Deviance Nula` = null.deviance,
+    `Deviance Residual` = deviance,
+    `Pseudo-R²` = pseudo_r2,
+    `Observaciones` = nobs
+  ) |> 
+  knitr::kable(
+    digits = c(0, 1, 1, 4, 1, 0),
+    caption = "Métricas de ajuste global: Modelo 1 vs Modelo 2"
+  ) |> 
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  row_spec(
+    row = 2,
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
+  )
+```
+
+::: callout-important
+**¿Conviene incluir la interacción?**
+
+Sí. Comparamos los dos modelos con el AIC (mejor el más bajo) y el Pseudo-R² (mejor el más alto), y los dos indicadores coinciden:
+
+AIC: baja de 13067 (Modelo 1) a 12974 (Modelo 2). Es una diferencia de unos 93 puntos; como en clase vimos que una diferencia mayor a 10 ya es relevante, esta mejora es claramente importante. Pseudo-R²: sube de 0.403 a 0.407. El Modelo 2 explica algo más que el Modelo 1.
+
+Ambos números apuntan en la misma dirección, así que concluimos que conviene incluir la interacción sex × marital_status: tiene sentido modelar el efecto del estado civil de forma distinta según el sexo. Esto confirma, además, nuestra hipótesis teórica: el premio salarial del matrimonio no es igual para varones que para mujeres.
 :::
