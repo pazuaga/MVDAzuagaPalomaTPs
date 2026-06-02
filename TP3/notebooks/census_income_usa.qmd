@@ -845,3 +845,11 @@ Comparamos los dos modelos con el AIC (mejor el más bajo) y el Pseudo-R² (mejo
 
 Ambos números apuntan en la misma dirección, así que concluimos que **conviene incluir la interacción `sex × marital_status`**: tiene sentido modelar el efecto del estado civil de forma distinta según el sexo. La historia que cuenta el modelo es clara: entre los solteros existe una fuerte brecha de género en los altos ingresos, pero el matrimonio eleva las chances de las mujeres mucho más que las de los varones, achicando esa brecha entre las personas casadas.
 :::
+
+## Conclusiones generales
+
+A lo largo del trabajo modelamos la probabilidad de que una persona del Censo de EE.UU. gane más de \$50.000 anuales en función de variables sociodemográficas y laborales, con una mirada explicativa.
+
+Las variables que más empujan hacia los altos ingresos son el **capital humano y el esfuerzo laboral**: cada año adicional de educación aumenta la probabilidad de ganar `>50K` en casi 4 puntos porcentuales en promedio, y tanto la edad como las horas trabajadas por semana suman de forma sostenida y significativa. La **ocupación** también ordena con claridad el panorama: frente a una ocupación de servicios de base (*Other-service*), los puestos gerenciales y profesionales (*Exec-managerial*, *Prof-specialty*, *Tech-support*) multiplican varias veces las chances de altos ingresos. La **ganancia de capital**, una vez transformada con logaritmo, aparece como un predictor fuerte y significativo, coherente con que refleja ingresos por inversiones propios de los estratos más altos.
+
+El núcleo explicativo del trabajo, sin embargo, es la relación entre **sexo y estado civil**. Por separado, ser mujer reduce las chances de altos ingresos y estar casado las aumenta mucho. Pero la interacción reveló que estos efectos no se suman de manera simple: entre las personas solteras existe una **brecha de género marcada** (la mujer soltera tiene bastante menos probabilidad de altos ingresos que el varón soltero), mientras que el matrimonio eleva las chances de las mujeres **mucho más** que las de los varones, de modo que entre las personas casadas esa brecha casi desaparece. La comparación de modelos confirmó que vale la pena modelar esta interacción: el AIC baja de 13067 a 12974 (una mejora clara) y el Pseudo-R² sube levemente.
