@@ -1,0 +1,166 @@
+---
+title: "Regresión logística: ingresos en el Censo de EE.UU. (>50K vs ≤50K)"
+date: "`r Sys.Date()`"
+lang: es
+execute:
+  echo: true
+  output: true
+  eval: true
+  cache: true
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-title: "Contenidos"
+    embed-resources: true
+    theme: cosmo
+    code-fold: false
+    code-tools: true
+    df-print: paged
+    include-in-header:
+      text: |
+        <style>
+        body {
+          text-align: justify;
+          font-size: 16px;
+          line-height: 1.6;
+        }
+        h1, h2, h3 {
+          color: #2C3E50;
+        }
+        .callout {
+          margin-top: 1.5em;
+          margin-bottom: 1.5em;
+        }
+        </style>
+---
+
+# ¿De qué trata este trabajo?
+
+El objetivo de este trabajo es aplicar la **regresión logística binomial** para modelar la probabilidad de que un ciudadano de Estados Unidos tenga ingresos anuales superiores a los **\$50.000** (variable objetivo dicotómica: `>50K` vs `<=50K`), a partir de predictores sociodemográficos y laborales del Censo de EE.UU.
+
+Adoptamos una perspectiva **descriptiva y explicativa**: no buscamos predecir sobre datos nuevos, sino caracterizar qué factores sociodemográficos y laborales determinan que una persona pertenezca al estrato de altos ingresos.
+
+------------------------------------------------------------------------
+
+## Librerías necesarias
+
+```{r}
+#| label: load-packages
+#| message: false
+#| warning: false
+#| cache: false
+
+# Instalamos pacman si no está disponible: es nuestro gestor de paquetes,
+# instala y carga en un solo paso para no repetir install.packages + library
+if (!require("pacman")) install.packages("pacman")
+
+# Cargamos de una sola vez todas las librerías que vamos a usar en el notebook
+pacman::p_load(
+  tidyverse,        # Manipulación de datos (dplyr, tidyr) y visualización (ggplot2)
+  here,             # Rutas relativas a la raíz del proyecto (la consigna pide cargar con here)
+  scales,           # Formateo de ejes y etiquetas en gráficos (porcentajes, dólares)
+  broom,            # Convierte outputs de modelos en data frames ordenados (tidy, glance)
+  modelsummary,     # Tablas de regresión estilo publicación académica
+  kableExtra,       # Decoración de tablas kable (estética de las tablas)
+  marginaleffects,  # Cálculo de efectos marginales promedio (AME) y predicciones
+  patchwork         # Componer y apilar varios gráficos en una sola figura
+)
+```
+
+# La base de datos del Censo
+
+Trabajamos con una adaptación del dataset *Adult Census Income*, construido a partir de microdatos del censo de los Estados Unidos. Contiene información de individuos en el mercado laboral: edad, nivel educativo, estado civil, género, ocupación, horas trabajadas, entre otras. La variable objetivo es `income`, que indica si la persona gana más de \$50.000 anuales (`>50K`) o no (`<=50K`).
+
+## Carga de datos
+
+```{r}
+#| label: cargar-datos
+#| message: false
+#| warning: false
+
+# Cargamos el csv usando here() para no escribir rutas absolutas.
+# here() cuenta siempre desde la raíz del proyecto (donde está el .Rproj),
+# así que apuntamos a la subcarpeta TP3/data sin importar desde dónde corramos
+datos_censo <- read_csv(
+  here("TP3", "data", "adult_census_USA.csv")
+) |>
+  as_tibble()
+
+# Echamos un primer vistazo a la estructura: tipos de columna y primeras filas
+glimpse(datos_censo)
+```
+
+## Limpieza y preparación de los datos
+
+Antes de modelar, dejamos la base lista: nos quedamos con las variables relevantes, recodificamos algunas para simplificar la lectura y, sobre todo, definimos la variable objetivo `income` como un factor con los niveles en el orden correcto.
+
+```{r}
+#| label: limpieza-datos
+#| message: false
+#| warning: false
+
+datos_censo <- datos_censo |> 
+  # Eliminamos filas con valores nulos (defensivo: este dataset viene sin NA,
+  # pero mantenemos el paso por las dudas, como hicimos en clase)
+  drop_na() |> 
+  # Nos quedamos solo con las variables que vamos a usar para explicar el ingreso
+  select(
+    age, education_num, marital_status, occupation,
+    sex, hours_per_week, capital_gain, income
+  ) |> 
+  mutate(
+    # --- Variable objetivo ---
+    # income como factor con niveles EXPLÍCITOS:
+    # "<=50K" como referencia (primer nivel) y ">50K" como clase a predecir (segundo nivel).
+    # Así el modelo estima la "Probabilidad de ganar más de 50K".
+    income = factor(income, levels = c("<=50K", ">50K")),
+    
+    # Versión numérica 0/1 de la variable dependiente.
+    # Útil para graficar curvas de probabilidad más adelante.
+    income_num = ifelse(income == ">50K", 1, 0),
+    
+    # --- Simplificación del estado civil ---
+    # marital_status viene con 7 categorías; las colapsamos a dos ("married" / "single")
+    # agrupando todas las variantes de casado/a en "married" y el resto en "single"
+    marital_status = case_when(
+      marital_status %in% c("Married-civ-spouse",
+                            "Married-AF-spouse",
+                            "Married-spouse-absent") ~ "married",
+      TRUE ~ "single"
+    ),
+    
+    # Convertimos a factor las categóricas (sin fijar referencia todavía:
+    # eso lo definiremos en el ajuste del modelo según la historia a contar)
+    marital_status = factor(marital_status),
+    occupation     = factor(occupation),
+    sex            = factor(sex)
+  )
+
+# Revisamos cómo quedó la base
+glimpse(datos_censo)
+```
+
+### ¿Están balanceados los datos?
+
+Antes de estimar conviene verificar que la variable objetivo no esté muy desbalanceada (un evento muy raro requeriría técnicas adicionales). Miramos el conteo y las proporciones.
+
+```{r}
+#| label: balance-datos
+#| message: false
+#| warning: false
+
+# Conteo absoluto de cada categoría de ingreso
+message("Distribución de la variable objetivo (income):")
+print(table(datos_censo$income))
+
+# Proporciones (para ver el balance en términos relativos)
+message("Proporciones:")
+print(prop.table(table(datos_censo$income)) |> round(3))
+```
+
+::: callout-note
+**Un dataset razonablemente balanceado**
+
+Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. Es un balance muy cómodo: nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo. :::
+:::
