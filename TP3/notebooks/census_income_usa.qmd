@@ -164,3 +164,267 @@ print(prop.table(table(datos_censo$income)) |> round(3))
 
 Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. Es un balance muy cómodo: nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo. :::
 :::
+
+## Exploración visual: ¿qué variables separan a los altos ingresos?
+
+El criterio para decidir transformaciones e interacciones no es correr modelos a ciegas, sino mirar las distribuciones. Observamos cómo se distribuye cada variable independiente (XX X) según las dos categorías de nuestra variable objetivo `income` (YY Y): quienes ganan `>50K` y quienes ganan `<=50K`.
+
+### Variables continuas vs. ingreso
+
+```{r}
+#| label: paleta-colores
+#| message: false
+#| warning: false
+
+# Definimos una paleta de colores consistente para todo el notebook:
+# un color para ingresos bajos (<=50K) y otro para ingresos altos (>50K)
+paleta_ingreso <- c("<=50K" = "#2166AC", ">50K" = "#B2182B")
+```
+
+```{r}
+#| label: fig-continuas-vs-y
+#| fig-width: 14
+#| fig-height: 10
+#| message: false
+#| warning: false
+
+# ----------------------------------------------------------
+# Edad vs Ingreso (Densidad)
+# Usamos densidad para ver la forma de la distribución de edad en cada grupo
+p_age <- datos_censo |> 
+  ggplot(aes(x = age, fill = income, color = income)) +
+  geom_density(alpha = 0.5, linewidth = 0.8) +
+  scale_fill_manual(values = paleta_ingreso, name = "Ingreso") +
+  scale_color_manual(values = paleta_ingreso, name = "Ingreso") +
+  labs(
+    title = "Distribución por Edad",
+    x = "Edad (años)",
+    y = "Densidad"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    legend.position = "bottom"
+  )
+
+# ----------------------------------------------------------
+# Horas semanales vs Ingreso (Violín + Boxplot)
+p_horas <- datos_censo |> 
+  ggplot(aes(x = income, y = hours_per_week, fill = income, color = income)) +
+  geom_violin(alpha = 0.3, linewidth = 0.5, width = 0.8) +
+  geom_boxplot(width = 0.2, alpha = 0.8, color = "gray20", outlier.shape = NA) +
+  scale_fill_manual(values = paleta_ingreso, guide = "none") +
+  scale_color_manual(values = paleta_ingreso, guide = "none") +
+  labs(
+    title = "Horas trabajadas por semana",
+    x = "Nivel de ingreso",
+    y = "Horas por semana"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 15))
+
+# ----------------------------------------------------------
+# Años de educación vs Ingreso (Violín + Boxplot)
+# education_num son años de educación, ordenados: lo tratamos como continua
+p_edu <- datos_censo |> 
+  ggplot(aes(x = income, y = education_num, fill = income, color = income)) +
+  geom_violin(alpha = 0.3, linewidth = 0.5, width = 0.8) +
+  geom_boxplot(width = 0.2, alpha = 0.8, color = "gray20", outlier.shape = NA) +
+  scale_fill_manual(values = paleta_ingreso, guide = "none") +
+  scale_color_manual(values = paleta_ingreso, guide = "none") +
+  labs(
+    title = "Años de educación",
+    x = "Nivel de ingreso",
+    y = "Años de educación (education_num)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 15))
+
+# ----------------------------------------------------------
+# Capital gain vs Ingreso (Violín + Boxplot en escala logarítmica)
+# Es una variable muy sesgada y con muchos ceros: le sumamos 1 SOLO para el
+# gráfico (para poder usar log) y aplicamos escala log en el eje Y, tal como
+# en clase se graficó el ingreso en escala log
+p_capital <- datos_censo |> 
+  ggplot(aes(x = income, y = capital_gain + 1, fill = income, color = income)) +
+  geom_violin(alpha = 0.3, linewidth = 0.5, width = 0.8) +
+  geom_boxplot(width = 0.2, alpha = 0.5, color = "gray20") +
+  scale_fill_manual(values = paleta_ingreso, guide = "none") +
+  scale_color_manual(values = paleta_ingreso, guide = "none") +
+  scale_y_log10(labels = scales::label_dollar()) +
+  labs(
+    title = "Ganancia de capital (escala logarítmica)",
+    x = "Nivel de ingreso",
+    y = "Capital gain + 1 (USD)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 15))
+
+# Componemos las cuatro figuras con patchwork
+((p_age | p_horas) / (p_edu | p_capital)) +
+  plot_annotation(
+    title = "Distribución de variables continuas según nivel de ingreso",
+    subtitle = "Educación y horas trabajadas muestran separación clara; capital_gain es muy sesgada.",
+    theme = theme(plot.title = element_text(face = "bold", size = 18))
+  )
+```
+
+::: callout-tip
+**Lectura de las variables continuas:**
+
+**Edad**: la curva de \>50K está desplazada hacia la derecha: los altos ingresos se concentran en edades más maduras (la juventud rara vez supera los 50K). La relación no parece estrictamente lineal (cae en edades muy avanzadas).
+
+**Horas por semana:** quienes ganan \>50K tienden a trabajar más horas; la mediana del grupo de altos ingresos está por encima.
+
+**Años de educación:** es de las variables que mejor separa. El grupo \>50K tiene una mediana de educación claramente más alta.
+
+**Ganancia de capital:** distribución extremadamente sesgada y con muchísimos ceros. En escala logarítmica se ve que los valores altos se asocian fuertemente a \>50K. Esto anticipa que conviene transformarla (lo discutimos en el próximo paso).
+:::
+
+### Variables categóricas vs. ingreso
+
+```{r}
+#| label: fig-categoricas-vs-y
+#| fig-width: 14
+#| fig-height: 6
+#| message: false
+#| warning: false
+
+# ----------------------------------------------------------
+# Estado civil vs Ingreso (barras proporcionales)
+p_marital <- datos_censo |> 
+  ggplot(aes(x = marital_status, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.8, color = "white") +
+  scale_fill_manual(values = paleta_ingreso, name = "Ingreso") +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "Ingreso por estado civil",
+    x = "Estado civil",
+    y = "Proporción"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.x = element_blank()
+  )
+
+# ----------------------------------------------------------
+# Sexo vs Ingreso (barras proporcionales)
+p_sex <- datos_censo |> 
+  ggplot(aes(x = sex, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.8, color = "white") +
+  scale_fill_manual(values = paleta_ingreso, name = "Ingreso") +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "Ingreso por sexo",
+    x = "Sexo",
+    y = "Proporción"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.x = element_blank()
+  )
+
+# Componemos las dos figuras
+(p_marital | p_sex) +
+  plot_annotation(
+    title = "Distribución del ingreso según variables categóricas (estado civil y sexo)",
+    theme = theme(plot.title = element_text(face = "bold", size = 18))
+  )
+```
+
+```{r}
+#| label: fig-ocupacion-vs-y
+#| fig-width: 12
+#| fig-height: 7
+#| message: false
+#| warning: false
+
+# Ocupación vs Ingreso (barras proporcionales horizontales)
+# Reordenamos las ocupaciones por su proporción de altos ingresos con fct_reorder
+# (visto en clase para ordenar factores según otra variable, útil para graficar)
+datos_censo |> 
+  ggplot(aes(
+    y = fct_reorder(occupation, income_num, .fun = mean),
+    fill = income
+  )) +
+  geom_bar(position = "fill", alpha = 0.8, color = "white") +
+  scale_fill_manual(values = paleta_ingreso, name = "Ingreso") +
+  scale_x_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "Ingreso por ocupación",
+    subtitle = "Ocupaciones ordenadas por proporción de ingresos altos (>50K)",
+    x = "Proporción",
+    y = "Ocupación"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.y = element_blank()
+  )
+```
+
+::: callout-tip
+**Lectura de las variables categóricas:**
+
+**Estado civil:** la diferencia es marcada. Entre las personas "married" la proporción de altos ingresos es mucho mayor que entre las "single". Es un predictor fuerte (aunque sabemos que el estado civil correlaciona con edad y género).
+
+**Sexo**: se observa una brecha clara: la proporción de \>50K es mayor entre los hombres que entre las mujeres.
+
+**Ocupación**: existe una jerarquía evidente. Ocupaciones como Exec-managerial y Prof-specialty concentran las mayores proporciones de altos ingresos, mientras que Other-service, Priv-house-serv o Handlers-cleaners quedan en el extremo opuesto.
+:::
+
+## Decisiones de transformación e interacción
+
+A partir de la exploración anterior tomamos dos decisiones de especificación, ambas con sustento teórico: aplicar una transformación logarítmica a una variable continua muy sesgada, e incluir un término de interacción entre dos variables.
+
+### Transformación logarítmica de `capital_gain`
+
+En el análisis exploratorio vimos que `capital_gain` está fuertemente sesgada: la mayoría de las observaciones son cero y unas pocas alcanzan valores enormes. Si la incluimos en crudo, esos pocos valores extremos dominan la estimación y el efecto se vuelve difícil de interpretar.
+
+La solución habitual es aplicar el **logaritmo**, que comprime la cola larga y permite leer el efecto en términos relativos. Como el logaritmo de cero no está definido (`log(0) = -Inf`) y esta variable tiene muchísimos ceros, usamos `log1p(x)`, que calcula `log(x + 1)`: así el valor 0 se mapea a 0 sin generar discontinuidades. Esta transformación la aplicaremos directamente dentro de la fórmula del modelo (`log1p(capital_gain)`), tal como en clase se escribió `log(...)` dentro del `glm()`.
+
+### Propuesta de interacción: `sex × marital_status`
+
+Proponemos incluir el término de interacción entre **sexo** y **estado civil**. La hipótesis teórica es la del *premio salarial del matrimonio* con sesgo de género: en el contexto del censo estadounidense, estar casado se asocia a mayores ingresos, pero ese efecto no sería igual para hombres y mujeres. Históricamente, el matrimonio potenciaba los ingresos de los hombres (rol de proveedor, mayor dedicación al empleo remunerado) más que los de las mujeres, sobre quienes solía recaer el trabajo doméstico no remunerado. Si esto es cierto, el efecto de estar casado sobre la probabilidad de ganar `>50K` **depende del sexo**, que es justamente lo que captura una interacción.
+
+Para justificarla visualmente, graficamos la proporción de altos ingresos por estado civil, separada por sexo.
+
+```{r}
+#| label: fig-interaccion-justificacion
+#| fig-width: 12
+#| fig-height: 6
+#| message: false
+#| warning: false
+
+# Barras proporcionales del ingreso según estado civil, faceteadas por sexo.
+# Si la relación entre estado civil e ingreso se comporta distinto en cada panel,
+# tenemos evidencia visual a favor de incluir la interacción sex * marital_status
+datos_censo |> 
+  ggplot(aes(x = marital_status, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.8, color = "white") +
+  # Facetamos por la otra variable de la interacción
+  facet_wrap(~ sex) +
+  scale_fill_manual(values = paleta_ingreso, name = "Ingreso") +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "Ingreso por estado civil, separado por sexo",
+    subtitle = "Si el efecto del estado civil difiere entre paneles, se justifica la interacción",
+    x = "Estado civil",
+    y = "Proporción"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.x = element_blank()
+  )
+```
+
+::: callout-tip
+**Justificando la interacción**
+
+En los hombres (un panel), el salto de "single" a "married" produce un aumento muy grande en la proporción de altos ingresos: el matrimonio se asocia a un salto fuerte hacia \>50K. En las mujeres (el otro panel), aunque también hay diferencia entre "single" y "married", el salto es notablemente más chico: estar casada no eleva la proporción de altos ingresos en la misma magnitud que en los hombres.
+
+Esta asimetría —el efecto del estado civil sobre el ingreso es más intenso en hombres que en mujeres— es exactamente lo que un término de interacción sex \* marital_status permite capturar, y no se explicaría simplemente sumando por separado el efecto de "ser mujer" y el de "estar casado".
+:::
