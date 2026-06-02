@@ -160,7 +160,7 @@ print(prop.table(table(datos_censo$income)) |> round(3))
 ::: callout-note
 **Un dataset razonablemente balanceado**
 
-Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. El balance nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo. :::
+Tras la limpieza nos quedan `r sum(datos_censo$income == "<=50K")` personas con ingresos `<=50K` y `r sum(datos_censo$income == ">50K")` con ingresos `>50K`, lo que da una proporción cercana al 52% / 48%. El balance nos permite enfocarnos directamente en la interpretación del modelo sin necesidad de técnicas de re-muestreo.
 :::
 
 ## Exploración visual: ¿qué variables separan a los altos ingresos?
@@ -422,9 +422,9 @@ datos_censo |>
 ::: callout-tip
 **Justificando la interacción**
 
-En los hombres (un panel), el salto de "single" a "married" produce un aumento muy grande en la proporción de altos ingresos: el matrimonio se asocia a un salto fuerte hacia \>50K. En las mujeres (el otro panel), aunque también hay diferencia entre "single" y "married", el salto es notablemente más chico: estar casada no eleva la proporción de altos ingresos en la misma magnitud que en los hombres.
+En los varones (un panel), la diferencia entre "single" y "married" en la proporción de altos ingresos existe pero es moderada. En las mujeres (el otro panel), el contraste es mucho más marcado: las mujeres solteras tienen una proporción de altos ingresos muy baja, mientras que entre las casadas esa proporción sube de forma notable.
 
-Esta asimetría —el efecto del estado civil sobre el ingreso es más intenso en hombres que en mujeres— es exactamente lo que un término de interacción sex \* marital_status permite capturar, y no se explicaría simplemente sumando por separado el efecto de "ser mujer" y el de "estar casado".
+Esta asimetría —el "salto" que produce el matrimonio sobre el ingreso es más pronunciado en las mujeres que en los varones— es exactamente lo que un término de interacción `sex * marital_status` permite capturar, y no se explicaría simplemente sumando por separado el efecto de "ser mujer" y el de "estar casado"
 :::
 
 ## Ajuste de los modelos de regresión logística
@@ -497,15 +497,15 @@ summary(modelo_int)
 
     Los coeficientes están en la escala de log-odds, poco intuitiva, así que por ahora solo leemos signo y significancia.
 
-    **(Intercept):** log-odds de ganar \>50K para el perfil de referencia (varón, soltero, ocupación Other-service, con el resto de variables en 0). No tiene una lectura práctica directa.
+    -   **(Intercept):** log-odds de ganar `>50K` para el perfil de referencia (varón, soltero, ocupación Other-service, con el resto de variables en 0). No tiene una lectura práctica directa.
 
-    **education_num, age, hours_per_week:** se esperan coeficientes positivos y significativos: más educación, más edad y más horas se asocian a mayor probabilidad de altos ingresos.
+    -   **education_num, age, hours_per_week:** coeficientes positivos y significativos: más educación, más edad y más horas se asocian a mayor probabilidad de altos ingresos
 
-    **log1p(capital_gain):** positivo y fuertemente significativo; las ganancias de capital empujan con claridad hacia \>50K.
+    -   **log1p(capital_gain):** positivo y fuertemente significativo; las ganancias de capital empujan con claridad hacia `>50K`.
 
-    **occupation...:** los niveles gerenciales y profesionales deberían mostrar coeficientes positivos grandes frente a la referencia Other-service.
+    -   **occupation…:** los niveles gerenciales y profesionales muestran coeficientes positivos grandes frente a la referencia Other-service.
 
-    **Sobre la interacción** (Modelo 2): observamos el término sexFemale:marital_statusmarried. Si es negativo y significativo, confirma nuestra hipótesis: el premio del matrimonio sobre el ingreso es menor para las mujeres que para los varones.
+    -   **Sobre la interacción (Modelo 2):** el término `sexFemale:marital_statusmarried` resultó **positivo y muy significativo** (1.13, p \< 2e-16). Esto matiza la lectura del efecto principal `sexFemale`, que es negativo (−0.81): ser mujer reduce las chances de altos ingresos **entre los solteros**, pero el término de interacción indica que el matrimonio recupera buena parte de esa diferencia en las mujeres.
     :::
 
 ## De *log-odds* a *Odds Ratios*
@@ -638,11 +638,11 @@ ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
 ::: callout-note
 **Lectura del forest plot**
 
-Los predictores ubicados a la derecha de la línea del 1 (educación, horas, ganancia de capital, ocupaciones gerenciales/profesionales) aumentan las chances de ganar \>50K; cuanto más lejos del 1 y más angostas sus barras, más fuerte y robusto el efecto.
+Los predictores ubicados a la derecha de la línea del 1 (educación, horas, ganancia de capital, ocupaciones gerenciales/profesionales) aumentan las chances de ganar `>50K`; cuanto más lejos del 1 y más angostas sus barras, más fuerte y robusto el efecto.
 
-El término Casado/a (vs Soltero/a) debería ubicarse claramente a la derecha del 1: estar casado multiplica las chances de altos ingresos. Pero, por la interacción, ese OR corresponde al efecto del matrimonio entre los varones (la referencia de sexo).
+El término `Casado/a (vs Soltero/a)` se ubica claramente a la derecha del 1 (OR ≈ 7.8): estar casado multiplica fuertemente las chances de altos ingresos. Pero, por la interacción, ese OR corresponde al efecto del matrimonio **entre los varones** (la referencia de sexo).
 
-El término Interacción: Mujer × Casada se ubicaría a la izquierda del 1: indica que, para las mujeres, el premio del matrimonio es menor que para los varones; las chances que el matrimonio agrega se ven reducidas por este factor multiplicativo.
+El término `Sexo: Mujer (vs Varón)` está a la izquierda del 1 (OR ≈ 0.44): entre los solteros, ser mujer reduce las chances de altos ingresos. En cambio, el término `Interacción: Mujer × Casada` está a la derecha del 1 (OR ≈ 3.1): para las mujeres, el matrimonio multiplica las chances **por encima** de lo que ya aporta estar casado, achicando la brecha de género que se observa entre los solteros.
 :::
 
 ## Efectos Marginales Promedio (AME)
@@ -718,17 +718,27 @@ efectos_marginales |>
 ::: callout-tip
 **Interpretación directa (AME):**
 
--   education_num: en promedio, cada año adicional de educación aumenta la probabilidad de ganar \>50K en X puntos porcentuales. Suele ser uno de los efectos más fuertes.
+-   **education_num:** en promedio, cada año adicional de educación aumenta la probabilidad de ganar `>50K` en **3.79 puntos porcentuales**. Es uno de los efectos más fuertes entre las continuas.
 
--   hours_per_week: cada hora semanal adicional aumenta la probabilidad en X p.p., en promedio.
+<!-- -->
 
--   age: cada año más de edad aumenta la probabilidad en X p.p.
+-   **hours_per_week:** cada hora semanal adicional aumenta la probabilidad en **0.46 p.p.**, en promedio.
 
--   capital_gain (dY/eX): un aumento porcentual en la ganancia de capital se asocia a X p.p. más de probabilidad de altos ingresos.
+<!-- -->
 
--   marital_status (married − single): estar casado/a aumenta, en promedio, la probabilidad de \>50K en X p.p. frente a estar soltero/a.
+-   **age:** cada año más de edad aumenta la probabilidad en **0.47 p.p.**, en promedio.
 
--   sex (Female − Male): en promedio, las mujeres tienen X p.p. menos de probabilidad de altos ingresos que los varones.
+<!-- -->
+
+-   **capital_gain (dY/eX):** un aumento porcentual en la ganancia de capital se asocia a más probabilidad de altos ingresos (semi-elasticidad de **1.82**), y es significativo.
+
+<!-- -->
+
+-   **marital_status (married − single):** estar casado/a aumenta, en promedio, la probabilidad de `>50K` en **36.87 p.p.** frente a estar soltero/a. Es el efecto más grande del modelo.
+
+<!-- -->
+
+-   **sex (Female − Male):** el AME de sexo es de apenas **−0.38 p.p.** y **no resulta significativo** (p = 0.66). Esto NO significa que no haya brecha de género: ocurre porque, con la interacción, el efecto de ser mujer depende del estado civil (negativo entre solteros, casi nulo entre casados), y al promediar ambos en un solo número la señal se diluye. El efecto real se ve en el gráfico siguiente.
 :::
 
 ### Visualización de la interacción: el impacto real en la probabilidad
@@ -781,7 +791,7 @@ p_base + p_int +
 
 En el Modelo 1, el modelo está forzado a mantener una distancia constante entre varones y mujeres en ambos estados civiles (las líneas se mueven en paralelo). El "premio del matrimonio" se asume idéntico para ambos sexos.
 
-En el Modelo 2, al liberar esa restricción, el patrón se esclarece: el salto de "single" a "married" eleva la probabilidad de altos ingresos mucho más en los varones que en las mujeres. La brecha de género se amplía entre las personas casadas, lo que respalda nuestra hipótesis del premio salarial del matrimonio con sesgo de género.
+En el Modelo 2, al liberar esa restricción, el patrón se esclarece: entre los **solteros** la brecha de género es grande (las mujeres solteras tienen una probabilidad de altos ingresos bastante menor que los varones solteros). Pero el salto de "single" a "married" eleva la probabilidad **mucho más en las mujeres que en los varones**, de modo que entre las personas **casadas** las probabilidades de ambos sexos se acercan y la brecha casi desaparece. El matrimonio, en estos datos, reduce la brecha de género en altos ingresos en lugar de ampliarla
 :::
 
 ## Comparación global de los modelos
@@ -827,9 +837,11 @@ bind_rows(
 ::: callout-important
 **¿Conviene incluir la interacción?**
 
-Sí. Comparamos los dos modelos con el AIC (mejor el más bajo) y el Pseudo-R² (mejor el más alto), y los dos indicadores coinciden:
+Comparamos los dos modelos con el AIC (mejor el más bajo) y el Pseudo-R² (mejor el más alto), y los dos indicadores coinciden:
 
-AIC: baja de 13067 (Modelo 1) a 12974 (Modelo 2). Es una diferencia de unos 93 puntos; como en clase vimos que una diferencia mayor a 10 ya es relevante, esta mejora es claramente importante. Pseudo-R²: sube de 0.403 a 0.407. El Modelo 2 explica algo más que el Modelo 1.
+-   **AIC:** baja de 13067 (Modelo 1) a 12974 (Modelo 2). Es una diferencia de unos 93 puntos; como en clase vimos que una diferencia mayor a 10 ya es relevante, esta mejora es claramente importante.
 
-Ambos números apuntan en la misma dirección, así que concluimos que conviene incluir la interacción sex × marital_status: tiene sentido modelar el efecto del estado civil de forma distinta según el sexo. Esto confirma, además, nuestra hipótesis teórica: el premio salarial del matrimonio no es igual para varones que para mujeres.
+-   **Pseudo-R²:** sube de 0.403 a 0.407. El Modelo 2 explica algo más que el Modelo 1.
+
+Ambos números apuntan en la misma dirección, así que concluimos que **conviene incluir la interacción `sex × marital_status`**: tiene sentido modelar el efecto del estado civil de forma distinta según el sexo. La historia que cuenta el modelo es clara: entre los solteros existe una fuerte brecha de género en los altos ingresos, pero el matrimonio eleva las chances de las mujeres mucho más que las de los varones, achicando esa brecha entre las personas casadas.
 :::
